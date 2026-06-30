@@ -1,0 +1,5 @@
+Data/
+*.dat
+*.dat.bz2
+__pycache__/
+*.pyc
