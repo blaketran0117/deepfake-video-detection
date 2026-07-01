@@ -107,7 +107,40 @@ than real ones (higher SSIM/PSNR, lower RMSE against their blurred copy).
 
 ![Real vs. deepfake feature distributions](assets/05_feature_separation.png)
 
-These HDF5 feature files are the training data for the classifier built in the next step.
+### 6. Train/test split & SVM training (`machine-learning-for-deep-fake/LP4_train_svm.ipynb`)
+
+Videos are split **80/20 at the video level** (not the frame level) and **stratified** by class, so all
+of a video's frames stay on one side of the split and both classes keep their proportions (600 train /
+150 test). Training features are gathered from the training videos only into one `X_train` array
+(frame vectors) with integer labels `y_train` (**1 = real, 0 = deepfake**), and a **scaled RBF SVM**
+(`StandardScaler` + `SVC`) is trained on them.
+
+### Training results & analysis
+
+A frame-level **training accuracy of 0.999** by itself proves little — a flexible model can memorize its
+training data. To understand whether the classifier actually *generalizes*, we look at three things:
+
+![SVM results: accuracy comparison, per-video scores, confusion matrix](assets/06_svm_results.png)
+
+- **Honest cross-validation (grouped by video).** A 5-fold CV that keeps each video's frames within a
+  single fold — so no video is ever in both train and validation — gives **0.990 ± 0.008 accuracy**
+  (AUC ≈ 1.0). The fact that this near-matches the training accuracy tells us the model is **not
+  overfitting**.
+- **Held-out test set.** Frame-level test accuracy is **0.997**. Aggregating a video's frame
+  probabilities into a single per-video score (the correct evaluation unit) yields **100% accuracy and
+  AUC = 1.0** on the 150 test videos — the middle panel shows fake and real videos collapsing to
+  opposite ends of the score axis with a wide margin around the 0.5 threshold.
+- **Why per-video beats per-frame.** Averaging ~10 frame scores per video cancels the occasional noisy
+  frame, which is exactly why the pipeline was designed to score whole videos rather than individual
+  frames.
+
+**Why is it this strong, and what's the catch?** The blur-sensitivity features (SSIM, PSNR, RMSE) are
+extremely discriminative here because DeepfakeTIMIT's GAN faces are *systematically smoother* than the
+real VidTIMIT faces — a single, consistent artifact. Two honest caveats temper the near-perfect score:
+the split is video-independent but **not subject-independent** (the same people appear in train and
+test, so identity cues may leak), and results come from **one dataset** of a specific GAN. Against
+unseen identities and more advanced deepfakes the numbers would drop — a subject-disjoint and
+cross-dataset evaluation is the natural next test.
 
 ## Technologies
 
@@ -115,6 +148,7 @@ These HDF5 feature files are the training data for the classifier built in the n
 - **OpenCV** — video decoding, geometric warping (`getRotationMatrix2D`, `warpAffine`), CLAHE, MIN-MAX
 - **facenet-pytorch (MTCNN)** on **PyTorch** — face + facial-landmark detection
 - **scikit-image** — image-similarity metrics (SSIM, PSNR, normalized-RMSE) for feature computation
+- **scikit-learn** — train/test split, SVM classifier, grouped cross-validation, evaluation metrics
 - **h5py (HDF5)** — on-disk storage of per-video feature matrices
 - **NumPy** — array representation and global statistics
 - **Matplotlib** — visualization
@@ -131,7 +165,8 @@ Deepfake-Detection/
 │   ├── face_normalization.ipynb                # Step 4: three normalizations
 │   ├── visual_extraction/                      # real vs. fake face comparison (diff, hist, SSIM, ORB)
 │   └── machine-learning-for-deep-fake/
-│       └── LP3_compute_features.ipynb          # Step 5: features → HDF5 (real/fake)
+│       ├── LP3_compute_features.ipynb          # Step 5: features → HDF5 (real/fake)
+│       └── LP4_train_svm.ipynb                 # Step 6: split + SVM training & results
 ├── assets/                          # figures used in this README
 ├── Data/                            # raw videos, generated crops, Features/ (not tracked)
 └── README.md
@@ -152,9 +187,10 @@ jupyter notebook   # then open a notebook in Scripts/ and select the deepfake-de
 - [x] **Data preparation** — frame extraction, MTCNN face & landmark detection, eye-based alignment,
   and normalization.
 - [x] **Feature extraction** — per-video 35-D feature vectors stored as HDF5, split by class.
-- [ ] **Classifier training** — train and evaluate a model on the HDF5 features to distinguish real
-  from deepfake faces.
-- [ ] **Evaluation & wrap-up** — accuracy/ROC on held-out subjects, error analysis, and final results.
+- [x] **Classifier training** — video-level stratified split and a scaled RBF SVM; validated with
+  grouped cross-validation (0.990 ± 0.008) and a held-out test set (100% video-level accuracy, AUC 1.0).
+- [ ] **Harder evaluation** — subject-disjoint and cross-dataset tests to measure real-world robustness.
+- [ ] **Wrap-up** — error analysis, threshold/latency trade-offs, and final write-up.
 
 This README will continue to be enriched as these remaining steps are completed and the project is
 wrapped up.
