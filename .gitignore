@@ -3,3 +3,5 @@ Data/
 *.dat.bz2
 __pycache__/
 *.pyc
+.ipynb_checkpoints/
+.DS_Store
