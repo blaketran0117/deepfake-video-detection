@@ -74,11 +74,48 @@ learning algorithm, not the human eye** (so some outputs no longer look like fac
 
 ![Face normalizations](assets/04_normalizations.png)
 
+## Machine learning method for deepfake detection
+
+With a clean, uniform set of faces in hand, the detection problem becomes a **feature-extraction and
+classification** problem: turn each face into a compact numerical vector, store those vectors, and
+train a classifier to separate genuine faces from deepfakes.
+
+### 5. Feature computation & storage (`machine-learning-for-deep-fake/LP3_compute_features.ipynb`)
+
+For **every** video in the dataset we sample a fixed number of frames (a parameter, here 10), detect
+and align the face, and compute a **35-dimensional feature vector** per face:
+
+- **SSIM, normalized-RMSE and PSNR** between the face and a slightly **blurred** copy of itself. These
+  measure how much high-frequency detail the face contains — the key intuition being that GAN-generated
+  faces tend to be *smoother*, so they change less when blurred.
+- A **32-bin intensity histogram** of the face.
+
+The features for each video are stored as a matrix of shape *(frames × features)* in **one HDF5 file
+per video**. Genuine and deepfake features are written to **separate, mirrored folders** so every
+feature file's origin is unambiguous:
+
+```
+Data/Features/
+├── real/<subject>/<utterance>.h5      # 430 files
+└── fake/<subject>/<utterance>.h5      # 320 files
+```
+
+**Which features are good descriptors?** Plotting the feature distributions across all ~7,500 extracted
+faces answers this directly. The blur-sensitivity features are strongly discriminative — **SSIM
+separates the classes with Cohen's *d* ≈ 2.7** — confirming that deepfake faces are measurably smoother
+than real ones (higher SSIM/PSNR, lower RMSE against their blurred copy).
+
+![Real vs. deepfake feature distributions](assets/05_feature_separation.png)
+
+These HDF5 feature files are the training data for the classifier built in the next step.
+
 ## Technologies
 
 - **Python 3.10** (conda env `deepfake-detect`)
 - **OpenCV** — video decoding, geometric warping (`getRotationMatrix2D`, `warpAffine`), CLAHE, MIN-MAX
 - **facenet-pytorch (MTCNN)** on **PyTorch** — face + facial-landmark detection
+- **scikit-image** — image-similarity metrics (SSIM, PSNR, normalized-RMSE) for feature computation
+- **h5py (HDF5)** — on-disk storage of per-video feature matrices
 - **NumPy** — array representation and global statistics
 - **Matplotlib** — visualization
 - **Jupyter** — one notebook per milestone
@@ -88,12 +125,15 @@ learning algorithm, not the human eye** (so some outputs no longer look like fac
 ```
 Deepfake-Detection/
 ├── Scripts/
-│   ├── video_frame_to_image.ipynb   # Step 1: frames → images, real/fake diff
-│   ├── face_detection.ipynb         # Step 2: MTCNN detection + landmarks
-│   ├── face_alignment.ipynb         # Step 3: crop_and_align()
-│   └── face_normalization.ipynb     # Step 4: three normalizations
+│   ├── video_frame_to_image.ipynb              # Step 1: frames → images, real/fake diff
+│   ├── face_detection.ipynb                    # Step 2: MTCNN detection + landmarks
+│   ├── face_alignment.ipynb                    # Step 3: crop_and_align()
+│   ├── face_normalization.ipynb                # Step 4: three normalizations
+│   ├── visual_extraction/                      # real vs. fake face comparison (diff, hist, SSIM, ORB)
+│   └── machine-learning-for-deep-fake/
+│       └── LP3_compute_features.ipynb          # Step 5: features → HDF5 (real/fake)
 ├── assets/                          # figures used in this README
-├── Data/                            # raw videos + generated crops (not tracked)
+├── Data/                            # raw videos, generated crops, Features/ (not tracked)
 └── README.md
 ```
 
@@ -109,6 +149,12 @@ jupyter notebook   # then open a notebook in Scripts/ and select the deepfake-de
 
 ## Status & roadmap
 
-This is the **initial README** covering data preparation (detection → alignment → normalization). It
-will be extended as the project grows toward the end goal: **extracting discriminative features from
-normalized faces and training a classifier to detect deepfakes.**
+- [x] **Data preparation** — frame extraction, MTCNN face & landmark detection, eye-based alignment,
+  and normalization.
+- [x] **Feature extraction** — per-video 35-D feature vectors stored as HDF5, split by class.
+- [ ] **Classifier training** — train and evaluate a model on the HDF5 features to distinguish real
+  from deepfake faces.
+- [ ] **Evaluation & wrap-up** — accuracy/ROC on held-out subjects, error analysis, and final results.
+
+This README will continue to be enriched as these remaining steps are completed and the project is
+wrapped up.
