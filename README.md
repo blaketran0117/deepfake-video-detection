@@ -142,6 +142,57 @@ test, so identity cues may leak), and results come from **one dataset** of a spe
 unseen identities and more advanced deepfakes the numbers would drop — a subject-disjoint and
 cross-dataset evaluation is the natural next test.
 
+## Evaluation
+
+The final milestone (`machine-learning-for-deep-fake/LP5_evaluate_svm.ipynb`) takes the **pretrained
+SVM** and scores the **held-out test videos** only — the model already saw the training videos, so
+scoring them would be meaninglessly optimistic. The test-set features (150 videos) are kept in separate
+`Data/Features_test/real/` and `Data/Features_test/fake/` folders so each prediction's ground truth is
+unambiguous.
+
+**From frame labels to a video decision.** The SVM outputs a 0/1 label for each frame's feature vector.
+Each video's frames are collapsed into a single **per-video score = the mean of its frame labels**; a
+score **above 0.5** is called genuine, **below 0.5** a deepfake. Averaging ~10 frames per video cancels
+the occasional misclassified frame.
+
+**Results on the 150 test videos (86 genuine, 64 deepfake):**
+
+| Metric | Value | Meaning |
+|---|---|---|
+| Accuracy | **100%** | videos labeled correctly |
+| **FPR** (false-positive rate) | **0.00** | deepfakes wrongly accepted as genuine ÷ all deepfakes |
+| **FNR** (false-negative rate) | **0.00** | genuine wrongly rejected as deepfake ÷ all genuine |
+| **AUC** | **1.00** | area under the ROC curve (threshold-independent separability) |
+| **EER** | **0.00** | equal error rate — the operating point where FPR = FNR |
+
+![ROC curve and parameter exploration](assets/07_evaluation.png)
+
+The ROC curve (left) hugs the top-left corner and the EER point sits at the origin: genuine and deepfake
+videos are perfectly separated at every threshold.
+
+**Which parameters actually drive the result?** Sweeping the classifier and the feature set (right
+panel) shows the performance is **carried by the blur-sensitivity features** (SSIM, PSNR, RMSE), not the
+histogram:
+
+| Configuration | AUC | EER |
+|---|---|---|
+| RBF SVM · all 35 features | **1.000** | **0.000** |
+| Linear SVM · all 35 features | 0.984 | 0.039 |
+| RBF SVM · weak regularization (C=0.01) | 0.938 | 0.099 |
+| RBF SVM · histogram-only (32 features) | 0.952 | 0.119 |
+| Linear SVM · histogram-only | 0.693 | 0.358 |
+
+Dropping the three blur metrics collapses a linear SVM from AUC ≈ 0.98 to ≈ 0.69, confirming they are
+the signal. The RBF kernel and proper regularization matter too. Other knobs the pipeline exposes — the
+**cropped-face size** and the **Gaussian-blur kernel/sigma** used to build the blurred reference — change
+the feature values themselves and are the natural next parameters to sweep.
+
+> **Reading the perfect score honestly.** 100% / EER 0 is a property of *this* benchmark, not proof of a
+> universal detector: the split is video- but **not subject-independent**, and every clip comes from one
+> dataset and one GAN whose faces share a consistent smoothing artifact. On unseen identities and
+> stronger generators the EER would rise — which is exactly why the roadmap's next step is a
+> subject-disjoint, cross-dataset evaluation.
+
 ## Technologies
 
 - **Python 3.10** (conda env `deepfake-detect`)
@@ -166,7 +217,8 @@ Deepfake-Detection/
 │   ├── visual_extraction/                      # real vs. fake face comparison (diff, hist, SSIM, ORB)
 │   └── machine-learning-for-deep-fake/
 │       ├── LP3_compute_features.ipynb          # Step 5: features → HDF5 (real/fake)
-│       └── LP4_train_svm.ipynb                 # Step 6: split + SVM training & results
+│       ├── LP4_train_svm.ipynb                 # Step 6: split + SVM training & results
+│       └── LP5_evaluate_svm.ipynb              # Step 7: test-set evaluation (EER, ROC, sweep)
 ├── assets/                          # figures used in this README
 ├── Data/                            # raw videos, generated crops, Features/ (not tracked)
 └── README.md
@@ -189,6 +241,8 @@ jupyter notebook   # then open a notebook in Scripts/ and select the deepfake-de
 - [x] **Feature extraction** — per-video 35-D feature vectors stored as HDF5, split by class.
 - [x] **Classifier training** — video-level stratified split and a scaled RBF SVM; validated with
   grouped cross-validation (0.990 ± 0.008) and a held-out test set (100% video-level accuracy, AUC 1.0).
+- [x] **Evaluation** — pretrained SVM scored on the held-out test videos: accuracy 100%, FPR/FNR 0,
+  AUC 1.0, EER 0.0, plus a classifier/feature parameter sweep (see [Evaluation](#evaluation)).
 - [ ] **Harder evaluation** — subject-disjoint and cross-dataset tests to measure real-world robustness.
 - [ ] **Wrap-up** — error analysis, threshold/latency trade-offs, and final write-up.
 
